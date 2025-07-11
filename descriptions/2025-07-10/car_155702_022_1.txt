@@ -1,0 +1,2 @@
+Error from Ollama: 400
+{"error":"invalid character '-' in numeric literal"}
