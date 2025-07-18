@@ -1,0 +1,4 @@
+Car Type: SUV
+Color: Grey
+Company: Toyota
+Registration Number: UK08TAG688

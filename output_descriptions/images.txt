@@ -1,0 +1,4 @@
+Car Type: Sedan
+Color: White
+Company: Maruti
+Registration Number: DL6CA96989

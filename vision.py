@@ -5,9 +5,11 @@ from vision_utils import call_llama_vision
 OLLAMA_URL = "http://localhost:11434"
 MODEL = "gemma3:4b"  # Use your actual vision model's tag here!
 PROMPT = (
-    "Identify the type of this vehicle (SUV, Sedan, Truck, etc.) and extract the registration (number plate) number. "
+    "Identify the type of this vehicle (SUV, Sedan, Truck, etc.),color of the vehicle, company if available and extract the registration (number plate) number very carefully(Don't skip any character from it). "
     "Respond ONLY in this format (no extra text):\n"
     "Car Type: <type>\n"
+    "Color: <color>\n"
+    "Company: <company>\n"
     "Registration Number: <number or 'Not Visible'>"
 )
 INPUT_FOLDER = r"E:\\July2025\\Anpr10_7\\detected_cars\\2025-07-10"
