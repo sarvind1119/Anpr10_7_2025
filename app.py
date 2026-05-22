@@ -7,7 +7,7 @@ from datetime import datetime
 model = YOLO('yolov8s.pt')  # or 'yolov8s.pt' for more accuracy
 
 # Set up video source (0 for webcam or path to video file)
-video_path = r"E:\\July2025\\Anpr10_7\\Toll.mp4"
+video_path = r"E:\\July2025\\Anpr10_7\\carslbs.mp4"
 cap = cv2.VideoCapture(video_path)
 
 today_str = datetime.now().strftime('%Y-%m-%d')

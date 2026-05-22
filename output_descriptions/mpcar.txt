@@ -1,4 +1,4 @@
 Car Type: SUV
 Color: White
-Company: Toyota
-Registration Number: NP04C095
+Company: Not Visible
+Registration Number: MP04CM095

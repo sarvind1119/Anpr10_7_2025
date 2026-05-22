@@ -1,4 +1,0 @@
-Car Type: Sedan
-Color: White
-Company: Maruti Suzuki
-Registration Number: UP20SE3008

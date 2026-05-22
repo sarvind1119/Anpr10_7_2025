@@ -1,0 +1,564 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Academy ANPR</title>
+  <link rel="stylesheet" href="{{ request.url_for('assets', path='style.css') }}">
+</head>
+<body>
+  <main class="page-shell">
+    <section class="hero">
+      <div>
+        <p class="eyebrow">Academy Network</p>
+        <h1>Gate Vehicle Log</h1>
+        <p class="subcopy">Single-gate entry records with snapshot evidence and manual review for uncertain plates.</p>
+      </div>
+      <a class="export-link" href="{{ request.url_for('export_events_csv') }}?q={{ query }}&review_status={{ review_status }}&event_date={{ event_date }}">Export CSV</a>
+    </section>
+
+    <section class="live-card">
+      <div class="runner-header">
+        <div>
+          <p class="eyebrow">Live Feed ANPR</p>
+          <h2>RTSP Source</h2>
+          <p class="subcopy">Run ANPR on the configured live camera feed directly from the dashboard.</p>
+          <p class="runner-meta">Camera: {{ live_runner.camera_name }} | Source: {{ live_runner.source_type }} | Feed: {{ live_runner.source_value_masked }}</p>
+        </div>
+        <div class="runner-status status-{{ live_runner.status }}">
+          <strong>{{ live_runner.status|upper }}</strong>
+          <span>{{ live_runner.message }}</span>
+          <span>Frames seen: {{ live_runner.frames_seen }}</span>
+          <span>Events recorded: {{ live_runner.events_recorded }}</span>
+          {% if live_runner.last_frame_at %}
+          <span>Last frame: {{ live_runner.last_frame_at }}</span>
+          {% endif %}
+          {% if live_runner.last_event_at %}
+          <span>Last detection: {{ live_runner.last_event_at }}</span>
+          {% endif %}
+          {% if live_runner.last_plate %}
+          <span>Last plate: {{ live_runner.last_plate }}</span>
+          {% endif %}
+          {% if live_runner.last_error %}
+          <span>Error: {{ live_runner.last_error }}</span>
+          {% endif %}
+          {% if live_runner.last_started_at %}
+          <span>Started: {{ live_runner.last_started_at }}</span>
+          {% endif %}
+          {% if live_runner.last_stopped_at %}
+          <span>Stopped: {{ live_runner.last_stopped_at }}</span>
+          {% endif %}
+        </div>
+      </div>
+      <div class="live-actions">
+        <form method="post" action="{{ request.url_for('start_live_feed') }}">
+          <button type="submit" {% if live_runner.is_running %}disabled{% endif %}>Start Live Feed ANPR</button>
+        </form>
+        <form method="post" action="{{ request.url_for('stop_live_feed') }}">
+          <button type="submit" class="ghost-button" {% if not live_runner.is_running %}disabled{% endif %}>Stop Live Feed</button>
+        </form>
+      </div>
+    </section>
+
+    <section class="roi-card">
+      <div class="runner-header">
+        <div>
+          <p class="eyebrow">ROI Control</p>
+          <h2>Detection Region</h2>
+          <p class="subcopy">Draw the area where vehicles should count. Once you save it, that ROI stays active for all future live-feed and test-video runs until you change or clear it.</p>
+        </div>
+        <div class="runner-status status-{{ 'completed' if roi.enabled else 'idle' }}">
+          <strong>{{ 'ROI ACTIVE' if roi.enabled else 'ROI DISABLED' }}</strong>
+          <span id="roiSummaryText">
+            {% if roi.enabled %}
+            X {{ "%.1f"|format(roi.x_min * 100) }}% to {{ "%.1f"|format(roi.x_max * 100) }}% | Y {{ "%.1f"|format(roi.y_min * 100) }}% to {{ "%.1f"|format(roi.y_max * 100) }}%
+            {% else %}
+            The full frame is currently being used.
+            {% endif %}
+          </span>
+          {% if roi.enabled and roi.updated_at %}
+          <span>Saved at: {{ roi.updated_at }}</span>
+          <span>Current saved ROI will remain active until you update or clear it.</span>
+          {% else %}
+          <span>Save once to make the ROI persistent.</span>
+          {% endif %}
+        </div>
+      </div>
+      {% if roi_message %}
+      <p class="roi-feedback roi-feedback-success">{{ roi_message }}</p>
+      {% endif %}
+      {% if roi_error %}
+      <p class="roi-feedback roi-feedback-error">{{ roi_error }}</p>
+      {% endif %}
+      <div class="roi-layout">
+        <div class="roi-summary-panel">
+          <div class="roi-map-card">
+            <div
+              class="roi-map"
+              id="roiMap"
+              data-enabled="{{ 'true' if roi.enabled else 'false' }}"
+              data-x-min="{{ roi.x_min }}"
+              data-y-min="{{ roi.y_min }}"
+              data-x-max="{{ roi.x_max }}"
+              data-y-max="{{ roi.y_max }}"
+            >
+              <div class="roi-map-grid" aria-hidden="true"></div>
+              <div id="roiMapBox" class="roi-map-box">
+                <span class="roi-map-label">Saved ROI</span>
+              </div>
+            </div>
+          </div>
+          <p class="runner-meta">
+            {% if roi.enabled %}
+            This saved ROI stays active for the feed until you click `Edit ROI` or `Clear ROI`.
+            {% else %}
+            No ROI is saved yet. Click `Create ROI` to define one.
+            {% endif %}
+          </p>
+        </div>
+        <div class="roi-controls">
+          <div class="live-actions">
+            <button type="button" id="toggleRoiEditorButton">{{ "Edit ROI" if roi.enabled else "Create ROI" }}</button>
+            <form method="post" action="{{ request.url_for('update_roi') }}">
+              <input type="hidden" name="x_min" value="0.022">
+              <input type="hidden" name="y_min" value="0.262">
+              <input type="hidden" name="x_max" value="0.408">
+              <input type="hidden" name="y_max" value="0.731">
+              <button type="submit">Apply Suggested Gate ROI</button>
+            </form>
+            <form method="post" action="{{ request.url_for('clear_roi') }}">
+              <button type="submit" class="ghost-button" {% if not roi.enabled %}disabled{% endif %}>Clear ROI</button>
+            </form>
+          </div>
+          <p class="roi-helper" id="roiHelperText">
+            {% if roi.enabled %}
+            Saved ROI is active. Open the editor only when you want to change it.
+            {% else %}
+            Open the editor, drag a box on the preview, then save it once.
+            {% endif %}
+          </p>
+          <p class="runner-meta">The saved box is stored on disk and reused automatically after refreshes, restarts, and new live-feed sessions.</p>
+        </div>
+      </div>
+
+      <div
+        class="roi-editor-panel {% if roi.enabled %}is-collapsed{% endif %}"
+        id="roiEditorPanel"
+        data-open="{{ 'false' if roi.enabled else 'true' }}"
+      >
+        <div class="live-actions roi-editor-actions">
+          <button type="button" class="ghost-button" id="cancelRoiEditorButton" {% if not roi.enabled %}disabled{% endif %}>Close Editor</button>
+          <button type="button" class="ghost-button" id="refreshPreviewButton">Refresh Preview</button>
+        </div>
+        <div class="roi-preview-panel">
+          <div
+            class="roi-preview"
+            id="roiPreview"
+            data-preview-url="{{ request.url_for('roi_preview_image') }}"
+            data-enabled="{{ 'true' if roi.enabled else 'false' }}"
+            data-x-min="{{ roi.x_min }}"
+            data-y-min="{{ roi.y_min }}"
+            data-x-max="{{ roi.x_max }}"
+            data-y-max="{{ roi.y_max }}"
+          >
+            <img id="roiPreviewImage" src="{{ request.url_for('roi_preview_image') }}?ts={{ live_runner.last_started_at or runner.last_started_at or query or 'now' }}" alt="Live feed ROI preview">
+            <div class="roi-grid" aria-hidden="true"></div>
+            <div id="roiOverlay" class="roi-overlay">
+              <div class="roi-overlay-grid" aria-hidden="true"></div>
+              <span class="roi-overlay-label">Active ROI</span>
+            </div>
+          </div>
+          <p class="runner-meta">Click and drag on the preview to set the ROI. Release the mouse, confirm the highlighted box, then save it.</p>
+          <form method="post" action="{{ request.url_for('update_roi') }}" id="roiForm" class="roi-form">
+            <input type="hidden" name="x_min" id="roiXMin" value="{{ roi.x_min }}">
+            <input type="hidden" name="y_min" id="roiYMin" value="{{ roi.y_min }}">
+            <input type="hidden" name="x_max" id="roiXMax" value="{{ roi.x_max }}">
+            <input type="hidden" name="y_max" id="roiYMax" value="{{ roi.y_max }}">
+            <div class="roi-readout">
+              <span>X1: <strong id="roiXMinText">{{ "%.3f"|format(roi.x_min) }}</strong></span>
+              <span>Y1: <strong id="roiYMinText">{{ "%.3f"|format(roi.y_min) }}</strong></span>
+              <span>X2: <strong id="roiXMaxText">{{ "%.3f"|format(roi.x_max) }}</strong></span>
+              <span>Y2: <strong id="roiYMaxText">{{ "%.3f"|format(roi.y_max) }}</strong></span>
+            </div>
+            <div class="roi-manual-grid">
+              <label>
+                Left %
+                <input type="number" id="roiLeftPercent" min="0" max="100" step="0.1" value="{{ "%.1f"|format(roi.x_min * 100) }}">
+              </label>
+              <label>
+                Top %
+                <input type="number" id="roiTopPercent" min="0" max="100" step="0.1" value="{{ "%.1f"|format(roi.y_min * 100) }}">
+              </label>
+              <label>
+                Right %
+                <input type="number" id="roiRightPercent" min="0" max="100" step="0.1" value="{{ "%.1f"|format(roi.x_max * 100) }}">
+              </label>
+              <label>
+                Bottom %
+                <input type="number" id="roiBottomPercent" min="0" max="100" step="0.1" value="{{ "%.1f"|format(roi.y_max * 100) }}">
+              </label>
+            </div>
+            <div class="live-actions">
+              <button
+                type="button"
+                class="ghost-button"
+                id="suggestedRoiButton"
+                data-x-min="0.022"
+                data-y-min="0.262"
+                data-x-max="0.408"
+                data-y-max="0.731"
+              >
+                Use Suggested Gate ROI
+              </button>
+            </div>
+            <button type="submit" id="saveRoiButton">Save ROI</button>
+          </form>
+          <p class="runner-meta">If dragging is difficult, use the percentage boxes. The suggested gate ROI is based on the red rectangle from your screenshot.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="runner-card">
+      <div class="runner-header">
+        <div>
+          <p class="eyebrow">Testing Runner</p>
+          <h2>Choose a Video</h2>
+          <p class="subcopy">Upload a test video from your machine or select an existing local file and run ANPR directly from the dashboard.</p>
+        </div>
+        <div class="runner-status status-{{ runner.status }}">
+          <strong>{{ runner.status|upper }}</strong>
+          <span>{{ runner.message }}</span>
+          {% if runner.current_video %}
+          <span>Video: {{ runner.current_video }}</span>
+          {% endif %}
+        </div>
+      </div>
+      <form method="post" action="{{ request.url_for('run_test_video') }}" enctype="multipart/form-data" class="runner-form">
+        <select name="selected_video" {% if runner.is_running %}disabled{% endif %}>
+          <option value="">Choose an existing local video</option>
+          {% for video in video_choices %}
+          <option value="{{ video }}">{{ video.name }}</option>
+          {% endfor %}
+        </select>
+        <input type="file" name="upload_video" accept=".mp4,.avi,.mov,.mkv" {% if runner.is_running %}disabled{% endif %}>
+        <input type="text" name="camera_name" value="test_video" placeholder="Camera label" {% if runner.is_running %}disabled{% endif %}>
+        <button type="submit" {% if runner.is_running %}disabled{% endif %}>Run Test Video</button>
+      </form>
+      {% if runner.last_started_at %}
+      <p class="runner-meta">Started: {{ runner.last_started_at }}{% if runner.last_finished_at %} | Finished: {{ runner.last_finished_at }}{% endif %}</p>
+      {% endif %}
+    </section>
+
+    <section class="filters">
+      <form method="get" action="{{ request.url_for('dashboard') }}" class="filters-form">
+        <input type="text" name="q" placeholder="Search plate" value="{{ query }}">
+        <select name="review_status">
+          <option value="">All statuses</option>
+          <option value="auto_accepted" {% if review_status == "auto_accepted" %}selected{% endif %}>Auto accepted</option>
+          <option value="pending" {% if review_status == "pending" %}selected{% endif %}>Pending review</option>
+          <option value="corrected" {% if review_status == "corrected" %}selected{% endif %}>Corrected</option>
+        </select>
+        <input type="date" name="event_date" value="{{ event_date }}">
+        <button type="submit">Filter</button>
+      </form>
+    </section>
+
+    <section class="table-card">
+      <table>
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Plate</th>
+            <th>Status</th>
+            <th>Confidence</th>
+            <th>Entry Time</th>
+            <th>Snapshot</th>
+            <th>Correct</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for event in events %}
+          <tr>
+            <td>{{ event.id }}</td>
+            <td>
+              <strong>{{ event.plate_number_final or "UNREADABLE" }}</strong>
+              {% if event.plate_number_raw and event.plate_number_raw != event.plate_number_final %}
+              <div class="raw-plate">Raw: {{ event.plate_number_raw }}</div>
+              {% endif %}
+            </td>
+            <td><span class="status status-{{ event.review_status }}">{{ event.review_status }}</span></td>
+            <td>{{ "%.1f"|format(event.ocr_confidence) }}</td>
+            <td>{{ event.entry_time.strftime("%Y-%m-%d %H:%M:%S") }}</td>
+            <td>
+              <a href="{{ request.url_for('serve_snapshot', relative_path=event.snapshot_path) }}" target="_blank">Frame</a>
+              {% if event.plate_crop_path %}
+              <a href="{{ request.url_for('serve_snapshot', relative_path=event.plate_crop_path) }}" target="_blank">Plate</a>
+              {% endif %}
+            </td>
+            <td>
+              <form method="post" action="{{ request.url_for('correct_event', event_id=event.id) }}" class="correction-form">
+                <input type="text" name="plate_number_final" value="{{ event.plate_number_final or event.plate_number_raw }}" required>
+                <button type="submit">Save</button>
+              </form>
+            </td>
+          </tr>
+          {% else %}
+          <tr>
+            <td colspan="7" class="empty-state">No events found for the selected filters.</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </section>
+  </main>
+  <script>
+    (function () {
+      const preview = document.getElementById("roiPreview");
+      if (!preview) {
+        return;
+      }
+
+      const image = document.getElementById("roiPreviewImage");
+      const overlay = document.getElementById("roiOverlay");
+      const map = document.getElementById("roiMap");
+      const mapBox = document.getElementById("roiMapBox");
+      const refreshButton = document.getElementById("refreshPreviewButton");
+      const toggleEditorButton = document.getElementById("toggleRoiEditorButton");
+      const cancelEditorButton = document.getElementById("cancelRoiEditorButton");
+      const editorPanel = document.getElementById("roiEditorPanel");
+      const summaryText = document.getElementById("roiSummaryText");
+      const helperText = document.getElementById("roiHelperText");
+      const saveButton = document.getElementById("saveRoiButton");
+      const suggestedRoiButton = document.getElementById("suggestedRoiButton");
+      const percentInputs = {
+        left: document.getElementById("roiLeftPercent"),
+        top: document.getElementById("roiTopPercent"),
+        right: document.getElementById("roiRightPercent"),
+        bottom: document.getElementById("roiBottomPercent"),
+      };
+      const inputs = {
+        xMin: document.getElementById("roiXMin"),
+        yMin: document.getElementById("roiYMin"),
+        xMax: document.getElementById("roiXMax"),
+        yMax: document.getElementById("roiYMax"),
+      };
+      const readout = {
+        xMin: document.getElementById("roiXMinText"),
+        yMin: document.getElementById("roiYMinText"),
+        xMax: document.getElementById("roiXMaxText"),
+        yMax: document.getElementById("roiYMaxText"),
+      };
+
+      const minimumSpan = 0.02;
+      const hasSavedRoi = preview.dataset.enabled === "true";
+      const initial = {
+        xMin: Number(preview.dataset.xMin || 0),
+        yMin: Number(preview.dataset.yMin || 0),
+        xMax: Number(preview.dataset.xMax || 1),
+        yMax: Number(preview.dataset.yMax || 1),
+      };
+      let draft = { ...initial };
+      let dragging = false;
+      let origin = null;
+      let hasValidDraft = hasSavedRoi;
+      let editorOpen = editorPanel.dataset.open === "true";
+
+      function clamp(value) {
+        return Math.max(0, Math.min(1, value));
+      }
+
+      function setDraft(next) {
+        draft = {
+          xMin: clamp(Math.min(next.xMin, next.xMax)),
+          yMin: clamp(Math.min(next.yMin, next.yMax)),
+          xMax: clamp(Math.max(next.xMin, next.xMax)),
+          yMax: clamp(Math.max(next.yMin, next.yMax)),
+        };
+
+        overlay.style.left = `${draft.xMin * 100}%`;
+        overlay.style.top = `${draft.yMin * 100}%`;
+        overlay.style.width = `${(draft.xMax - draft.xMin) * 100}%`;
+        overlay.style.height = `${(draft.yMax - draft.yMin) * 100}%`;
+        overlay.classList.add("visible");
+
+        inputs.xMin.value = draft.xMin.toFixed(6);
+        inputs.yMin.value = draft.yMin.toFixed(6);
+        inputs.xMax.value = draft.xMax.toFixed(6);
+        inputs.yMax.value = draft.yMax.toFixed(6);
+        percentInputs.left.value = (draft.xMin * 100).toFixed(1);
+        percentInputs.top.value = (draft.yMin * 100).toFixed(1);
+        percentInputs.right.value = (draft.xMax * 100).toFixed(1);
+        percentInputs.bottom.value = (draft.yMax * 100).toFixed(1);
+
+        readout.xMin.textContent = draft.xMin.toFixed(3);
+        readout.yMin.textContent = draft.yMin.toFixed(3);
+        readout.xMax.textContent = draft.xMax.toFixed(3);
+        readout.yMax.textContent = draft.yMax.toFixed(3);
+        summaryText.textContent = `X ${(draft.xMin * 100).toFixed(1)}% to ${(draft.xMax * 100).toFixed(1)}% | Y ${(draft.yMin * 100).toFixed(1)}% to ${(draft.yMax * 100).toFixed(1)}%`;
+        syncMap(draft, true);
+      }
+
+      function eventToPoint(event) {
+        const rect = preview.getBoundingClientRect();
+        return {
+          x: clamp((event.clientX - rect.left) / rect.width),
+          y: clamp((event.clientY - rect.top) / rect.height),
+        };
+      }
+
+      function isLargeEnough(region) {
+        return (region.xMax - region.xMin) >= minimumSpan && (region.yMax - region.yMin) >= minimumSpan;
+      }
+
+      function syncMap(region, enabled) {
+        if (!enabled) {
+          mapBox.classList.remove("visible");
+          return;
+        }
+        mapBox.style.left = `${region.xMin * 100}%`;
+        mapBox.style.top = `${region.yMin * 100}%`;
+        mapBox.style.width = `${(region.xMax - region.xMin) * 100}%`;
+        mapBox.style.height = `${(region.yMax - region.yMin) * 100}%`;
+        mapBox.classList.add("visible");
+      }
+
+      function setEditorOpen(next) {
+        editorOpen = next;
+        editorPanel.classList.toggle("is-collapsed", !next);
+        toggleEditorButton.textContent = next ? "Editing ROI" : (hasSavedRoi ? "Edit ROI" : "Create ROI");
+        toggleEditorButton.disabled = next;
+        cancelEditorButton.disabled = !next && !hasSavedRoi;
+      }
+
+      function applySavedOrDefault() {
+        if (hasSavedRoi) {
+          draft = { ...initial };
+          setDraft(draft);
+          saveButton.disabled = false;
+          helperText.textContent = "Saved ROI is active. Open the editor only when you want to replace it.";
+          helperText.className = "roi-helper";
+          hasValidDraft = true;
+          syncMap(draft, true);
+          return;
+        }
+        overlay.classList.remove("visible");
+        syncMap(draft, false);
+        saveButton.disabled = true;
+        helperText.textContent = "No ROI saved yet. Open the editor, drag a region, and save it once.";
+        helperText.className = "roi-helper";
+        hasValidDraft = false;
+      }
+
+      applySavedOrDefault();
+      setEditorOpen(editorOpen);
+
+      preview.addEventListener("mousedown", function (event) {
+        if (!editorOpen) {
+          return;
+        }
+        origin = eventToPoint(event);
+        dragging = true;
+        helperText.textContent = "Drawing ROI...";
+        helperText.className = "roi-helper";
+      });
+
+      window.addEventListener("mousemove", function (event) {
+        if (!editorOpen || !dragging || !origin) {
+          return;
+        }
+        const point = eventToPoint(event);
+        setDraft({ xMin: origin.x, yMin: origin.y, xMax: point.x, yMax: point.y });
+      });
+
+      window.addEventListener("mouseup", function (event) {
+        if (!editorOpen || !dragging || !origin) {
+          return;
+        }
+        dragging = false;
+        const point = eventToPoint(event);
+        const candidate = {
+          xMin: Math.min(origin.x, point.x),
+          yMin: Math.min(origin.y, point.y),
+          xMax: Math.max(origin.x, point.x),
+          yMax: Math.max(origin.y, point.y),
+        };
+        origin = null;
+        if (!isLargeEnough(candidate)) {
+          applySavedOrDefault();
+          helperText.textContent = "ROI not updated. Drag a larger box before saving.";
+          helperText.className = "roi-helper roi-helper-error";
+          return;
+        }
+        setDraft(candidate);
+        saveButton.disabled = false;
+        hasValidDraft = true;
+        helperText.textContent = "ROI ready. Click Save ROI to apply it to the feed.";
+        helperText.className = "roi-helper roi-helper-success";
+      });
+
+      refreshButton.addEventListener("click", function () {
+        image.src = `${preview.dataset.previewUrl}?ts=${Date.now()}`;
+      });
+
+      toggleEditorButton.addEventListener("click", function () {
+        setEditorOpen(true);
+        helperText.textContent = "Editor open. Drag a box on the preview, then click Save ROI.";
+        helperText.className = "roi-helper";
+      });
+
+      cancelEditorButton.addEventListener("click", function () {
+        setEditorOpen(false);
+        applySavedOrDefault();
+      });
+
+      function applyPercentInputs() {
+        const candidate = {
+          xMin: clamp(Number(percentInputs.left.value || 0) / 100),
+          yMin: clamp(Number(percentInputs.top.value || 0) / 100),
+          xMax: clamp(Number(percentInputs.right.value || 0) / 100),
+          yMax: clamp(Number(percentInputs.bottom.value || 0) / 100),
+        };
+        const normalizedCandidate = {
+          xMin: Math.min(candidate.xMin, candidate.xMax),
+          yMin: Math.min(candidate.yMin, candidate.yMax),
+          xMax: Math.max(candidate.xMin, candidate.xMax),
+          yMax: Math.max(candidate.yMin, candidate.yMax),
+        };
+        if (!isLargeEnough(normalizedCandidate)) {
+          helperText.textContent = "ROI numbers are too small or overlapping. Increase the box size.";
+          helperText.className = "roi-helper roi-helper-error";
+          hasValidDraft = false;
+          return;
+        }
+        setDraft(normalizedCandidate);
+        hasValidDraft = true;
+        saveButton.disabled = false;
+        helperText.textContent = "ROI updated from percentage inputs. Click Save ROI to apply it.";
+        helperText.className = "roi-helper roi-helper-success";
+      }
+
+      Object.values(percentInputs).forEach(function (input) {
+        input.addEventListener("input", function () {
+          applyPercentInputs();
+        });
+      });
+
+      suggestedRoiButton.addEventListener("click", function () {
+        percentInputs.left.value = (Number(suggestedRoiButton.dataset.xMin) * 100).toFixed(1);
+        percentInputs.top.value = (Number(suggestedRoiButton.dataset.yMin) * 100).toFixed(1);
+        percentInputs.right.value = (Number(suggestedRoiButton.dataset.xMax) * 100).toFixed(1);
+        percentInputs.bottom.value = (Number(suggestedRoiButton.dataset.yMax) * 100).toFixed(1);
+        applyPercentInputs();
+      });
+
+      document.getElementById("roiForm").addEventListener("submit", function (event) {
+        if (!hasValidDraft || !isLargeEnough(draft)) {
+          event.preventDefault();
+          helperText.textContent = "Draw a valid ROI before saving.";
+          helperText.className = "roi-helper roi-helper-error";
+        }
+      });
+    })();
+  </script>
+</body>
+</html>

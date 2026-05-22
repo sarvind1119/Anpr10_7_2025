@@ -1,3 +1,11 @@
-ultralytics
+fastapi
+jinja2
 opencv-python
+pillow
+pytesseract
+python-dotenv
+python-multipart
 requests
+sqlalchemy
+ultralytics
+uvicorn

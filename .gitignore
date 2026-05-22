@@ -1,7 +1,54 @@
-/cars.mp4
-/detected_cars
-/test.py
-/Toll.mp4
-/venv
-/yolov8n.pt
-/yolov8s.pt
+# Python bytecode and caches
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# Virtual environments
+venv/
+.venv/
+env/
+
+# Local environment configuration
+.env
+.env.local
+
+# Build and packaging
+build/
+dist/
+*.egg-info/
+.eggs/
+pip-wheel-metadata/
+
+# Runtime data and local storage
+logs/
+storage/
+data/runtime/
+*.db
+*.sqlite
+*.sqlite3
+
+# Generated prototype outputs
+detected_cars/
+descriptions/
+output_descriptions/
+
+# Local media and model weights
+*.mp4
+*.avi
+*.mov
+*.mkv
+*.pt
+*.onnx
+
+# Editor and OS files
+.vscode/
+.idea/
+Thumbs.db
+Desktop.ini
+.DS_Store

@@ -1,4 +1,0 @@
-Car Type: SUV
-Color: Gray
-Company: Kia
-Registration Number: DL1CAD526
